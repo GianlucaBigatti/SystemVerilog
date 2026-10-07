@@ -13,6 +13,9 @@ logic send;
 logic flag;
 
 
+// ---------------- RECEIVER ----------------
+logic [7:0] scancode;
+
 receiver receiver (
     .clk(clk),
     .rst(rst),
@@ -24,24 +27,64 @@ receiver receiver (
 
 
 
-if ( scancode != 8'hf0 ) begin
-    if ( send ) begin
-        if ( !flag ) begin
-            displays[0] <= scancode;
-            displays[1] <= displays[0];
-            displays[2] <= displays[1];
-            displays[3] <= displays[2];
-            displays[4] <= displays[3];
-            displays[5] <= displays[4];
-            displays[6] <= displays[5];
-            displays[7] <= displays[6];
-        end else begin
-            flag <= 1'b0;
-        end
-    end
-end else begin
-    lag <= 1'b1;
+// ---------------- DECODER ASCII ABNT2 ----------------
+logic [7:0] ascii;
+decoder_ascii_abnt2 decoder (
+  .scancode(scancode),
+  .ascii(ascii)
+);
+
+
+
+// ---------------- DOUBLE LETTER CASE ----------------
+logic [7:0] ascii_out;
+always_ff @( posedge clk, posedge rst ) begin
+  if ( scancode != 8'hf0 ) begin
+      if ( send ) begin
+          if ( !flag ) begin
+              ascii_out <= ascii;
+          end else begin
+              flag <= 1'b0;
+          end
+      end
+  end else begin
+      lag <= 1'b1;
+  end
 end
 
 
+// ---------------- CLK DIVIDER ----------------
+logic [12:0] clk_divider;
+
+always_ff @( posedge clk, negedge rst_n ) begin
+  if ( !rst_n ) begin
+    clk_divider <= '0;
+    clk_9600    <= '0;
+  end else begin
+    if ( clk_divider >= 13'd5208 ) begin
+      clk_divider <= '0;
+      clk_9600    <= ~clk_9600;
+    end else begin
+      clk_divider <= clk_divider + 1'b1;
+    end
+  end
+end
+
+
+
+// ---------------- TX_DATA ----------------
+logic [2:0] count; 
+always_ff @( posedge clk_9600 ) begin
+  if( send ) begin
+    if( count == '1 ) begin
+      tx_data <= ascii_out[count];
+      count <= count + 1'b1;
+      tx_done <= 1'b1;
+    end else begin
+      tx_done <= 1'b0;
+      tx_data <= ascii_out[count];
+      count <= count + 1'b1;
+    end
+  end
+end
 endmodule
